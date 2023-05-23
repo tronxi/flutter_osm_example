@@ -1,5 +1,12 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 void main() {
@@ -45,10 +52,26 @@ class WidgetMap extends StatefulWidget {
 
 class _WidgetMapState extends State<WidgetMap> {
   late final List<Marker> _markers;
+  late LatLng? _current;
+  late double _currentHeading;
+  final MapController _mapController = MapController();
 
   @override
   void initState() {
-    _markers = [_createMarker(LatLng(39.86867330365601, -4.365601442330021))];
+    _markers = [];
+    _currentHeading = 0;
+    _current = LatLng(0, 0);
+    _determinePosition().then((value) {
+      _current = LatLng(value.latitude, value.longitude);
+      _markers.add(_createCompassMarker());
+      _moveToCurrent();
+      _initCompass();
+      Geolocator.getPositionStream(
+              locationSettings:
+                  const LocationSettings(accuracy: LocationAccuracy.high))
+          .listen(
+              (event) => _current = LatLng(event.latitude, event.longitude));
+    });
 
     super.initState();
   }
@@ -56,11 +79,20 @@ class _WidgetMapState extends State<WidgetMap> {
   @override
   Widget build(BuildContext context) {
     return FlutterMap(
+      mapController: _mapController,
       options: MapOptions(
-        center: LatLng(39.86867330365601, -4.365601442330021),
+        maxZoom: 18,
         zoom: 15,
         onTap: (tapPosition, point) => _addMarker(point),
       ),
+      nonRotatedChildren: [
+        Positioned(
+            bottom: 16.0,
+            right: 16.0,
+            child: IconButton(
+                onPressed: _moveToCurrent,
+                icon: const Icon(Icons.location_searching)))
+      ],
       children: [
         TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
@@ -86,5 +118,63 @@ class _WidgetMapState extends State<WidgetMap> {
             onPressed: () => print(point),
             icon: Icon(Icons.location_on_sharp,
                 color: Theme.of(context).primaryColor)));
+  }
+
+  void _moveToCurrent() {
+    if (_current != null) {
+      _mapController.move(_current!, 15);
+    }
+  }
+
+  Future<Position> _determinePosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return Future.error('Location services are disabled.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return Future.error('Location permissions are denied');
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      return Future.error(
+          'Location permissions are permanently denied, we cannot request permissions.');
+    }
+    return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.best);
+  }
+
+  Marker _createCompassMarker() {
+    return Marker(
+      width: 80,
+      height: 80,
+      point: _current!,
+      builder: (context) => Transform.rotate(
+        angle: (_currentHeading * (math.pi / 180)),
+        child: const Icon(
+          Icons.keyboard_arrow_up,
+          color: Colors.blueAccent,
+          size: 80,
+        ),
+      ),
+    );
+  }
+
+  void _initCompass() {
+    if (kIsWeb) return;
+    if (Platform.isAndroid || Platform.isIOS) {
+      FlutterCompass.events?.listen((event) {
+        setState(() {
+          _currentHeading = event.heading ?? 0;
+        });
+      });
+    }
   }
 }
