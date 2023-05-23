@@ -66,11 +66,7 @@ class _WidgetMapState extends State<WidgetMap> {
       _markers.add(_createCompassMarker());
       _moveToCurrent();
       _initCompass();
-      Geolocator.getPositionStream(
-              locationSettings:
-                  const LocationSettings(accuracy: LocationAccuracy.high))
-          .listen(
-              (event) => _current = LatLng(event.latitude, event.longitude));
+      _followPosition();
     });
 
     super.initState();
@@ -176,5 +172,15 @@ class _WidgetMapState extends State<WidgetMap> {
         });
       });
     }
+  }
+
+  void _followPosition() {
+    Geolocator.getPositionStream(
+        locationSettings:
+        const LocationSettings(accuracy: LocationAccuracy.high))
+        .listen(
+            (event) => setState(() {
+              _current = LatLng(event.latitude, event.longitude);
+            }));
   }
 }
